@@ -1,0 +1,97 @@
+#-*-:coding:utf-8-*-
+import asyncio
+import urllib.parse
+import sys,time
+import re
+import socket
+socket.setdefaulttimeout(30)
+@asyncio.coroutine
+def print_http_headers(future):
+    url = urllib.parse.urlsplit(future.url)
+    if url.scheme == 'https':
+        connect = asyncio.open_connection(url.hostname,443,ssl=True)
+    else:
+        connect = asyncio.open_connection(url.hostname, 80)
+    reader, writer = yield from connect
+    query = ('GET {path} HTTP/1.0\r\n'
+             'Host: {hostname}\r\n'
+             '\r\n').format(path=url.path or '/', hostname=url.hostname)
+    writer.write(query.encode('utf-8'))
+    line = yield from reader.read()
+    if line:
+            line = line.decode('utf-8')#.rstrip()
+            future.set_result(future.pattern.findall(line))
+            #print('HTTP header> %s' % future.result())
+    else:
+            print('No Html Page')
+#    while True:
+#        line = yield from reader.read()
+#        if not line:
+#            break
+#        line = line.decode('utf-8')#.rstrip()
+#        if line:
+#            print('HTTP header> %s' % url.hostname)
+    #print(line.decode('utf-8'))
+    # Ignore the body, close the socket
+    writer.close()
+    
+def setfuture(url,pattern):
+    future=asyncio.Future()
+    future.url=url
+    future.pattern=pattern
+    #future.index
+    return future
+def futureresult(future):
+    sorturl=''
+    for i in future.result():
+        i=i.replace('""','"',1)
+        i=i.replace('/>','"/>',1)
+        href=re.findall('href="[^<>]*?"',i)
+        if href:
+           i=i+'<br />'+href[0]+'<br />' 
+        sorturl=sorturl+i+'<br />'+future.url+'<br />'
+    return sorturl
+#url = sys.argv[1]
+if __name__=='__main__':
+    #url=r""
+    url=r""
+    #urltype='img'#提取模式 img为图片 link为小故事链接
+    urlstart=2
+    urlend=60
+    imgindex=7457#控制是获取列表还是获取图片
+    if imgindex:
+        url=r"https://m.airoufan.net/roufan/"+str(imgindex)+"_"
+    else:
+        url=r"https://m.airoufan.net/roufan/list_4_"
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    #file=r'C:\Users\Administrator\Desktop\新建文本文档11.html'
+    start=time.time()
+    #pattern=re.compile('<[ ]*img[^<>]*>',re.M|re.I|re.S))#这个可以提取图片
+    if 'list' in url:
+        file=r'C:\Users\Administrator\Desktop\新建文本文档11.html'
+        pattern=re.compile('<[ ]*a[^<>]*><[ ]*img[^<>]*><[^<>]*a[ ]*>',re.M|re.I|re.S)#这个可以提取小故事的超链接
+    else:
+        file=r'C:\Users\Administrator\Desktop\新建文本文档12.html'
+        pattern=re.compile('<[ ]*img[^<>]*>',re.M|re.I|re.S)#这个可以提取图片
+    #future=[setfuture(url[:-1]+'.html',pattern)]+[setfuture(url+str(i)+'.html',pattern) for i in range(2,100)]
+    future=[setfuture(url+str(i)+'.html',pattern) for i in range(urlstart,urlend)]
+    #print(future)
+    task = [asyncio.ensure_future(print_http_headers(j)) for j in future]
+    #print(task)
+    loop.run_until_complete(asyncio.gather(*future))
+    loop.close()
+    #future.sort(key=lambda x:x.i)
+    #sorturl=[i.result()[0]+'<br />'+i.url+'<br />' for i in future if i.result()]#这个和图片pattern一起用
+    if 'list' in url:
+        sorturl=[futureresult(i) for i in future if i.result()]#这个和可以提取小故事的超链接一起用
+    else:
+        sorturl=[i.result()[0]+'<br />'+i.url+'<br />' for i in future if i.result()]#这个和图片pattern一起用
+    #future.result()
+    #sorturl.sort()
+    print(sorturl)
+    with open(file,'w+') as f:
+        for i in sorturl:
+            f.write(i)
+    end=time.time()
+    print('time is:',end-start)
